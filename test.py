@@ -41,7 +41,7 @@ def test_file(data):
 
     lzss.encode_file(tmp_in.name, tmp_lzss.name)
     lzss.decode_file(tmp_lzss.name, tmp_orig.name)
-    data_orig = open(tmp_orig.name).read()
+    data_orig = open(tmp_orig.name, 'rb').read()
 
     os.unlink(tmp_in.name)
     os.unlink(tmp_lzss.name)
@@ -50,7 +50,7 @@ def test_file(data):
     return data == data_orig
 
 def main(argv):
-    data = """\
+    data = b"""\
 Lorem ipsum dolor sit amet, consectetur
 adipisicing elit, sed do eiusmod tempor
 incididunt ut labore et dolore magna
@@ -68,7 +68,7 @@ est laborum."""
 
     tests = { 'buffer': test_buffer, 'file': test_file }
 
-    for name, f in tests.iteritems():
+    for name, f in tests.items():
         print("Test: {}... ".format(name), end='')
         if f(data) is False:
             result = False
