@@ -19,7 +19,7 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <Python.h>
+#include <py3c.h>
 #include "lzss.h"
 
 #ifndef uint8_t
@@ -84,18 +84,27 @@ static PyMethodDef pylzss_methods[] = {
 	{ NULL, NULL, 0, NULL }
 };
 
-PyMODINIT_FUNC initlzss(void)
+MODULE_INIT_FUNC(lzss)
 {
-	PyObject *m;
-
-	m = Py_InitModule("lzss", pylzss_methods);
-
-	if (m == NULL)
-		return;
+	PyObject *module;
+	static struct PyModuleDef moduledef = {
+		PyModuleDef_HEAD_INIT,
+		"lzss",
+		NULL,
+		-1,
+		pylzss_methods,
+		NULL,
+		NULL,
+		NULL,
+		NULL
+	};
+	module = PyModule_Create(&moduledef);
+	if (!module) return NULL;
 
 	pylzss_error = PyErr_NewException("lzss.error", NULL, NULL);
 	Py_INCREF(pylzss_error);
-	PyModule_AddObject(m, "error", pylzss_error);
+	PyModule_AddObject(module, "error", pylzss_error);
+	return module;
 }
 
 /* -----------------------------------------------------------------------------
@@ -157,7 +166,7 @@ static PyObject *pylzss_encode_decode(PyObject *m, PyObject *args,
 		return NULL;
 	}
 
-	output = PyString_FromStringAndSize((char *)obuf.data, obuf.cur);
+	output = PyBytes_FromStringAndSize((char *)obuf.data, obuf.cur);
 	PyMem_Free(obuf.data);
 	pylzss_free_lzss(&lzss);
 
