@@ -26,7 +26,8 @@ setup(name="lzss",
       author_email="guillaume.tucker@plasticlogic.com",
       maintainer="rumbah",
       maintainer_email="rumbah@users.noreply.github.com",
-      license="GNU GPL v3",
+      url="https://github.com/rumbah/pylzss",
+      license="GNU LGPL v3",
       platforms=["Windows", "Linux"],
       ext_modules=[Extension(
             "lzss",
@@ -34,4 +35,13 @@ setup(name="lzss",
             include_dirs=['./include'],
             language="C")],
       long_description="""\
-A package for decoding / encoding LZSS-compressed data.""")
+A package for decoding / encoding LZSS-compressed data.""",
+
+    classifiers=[
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 2",
+                "Topic :: System :: Archiving :: Compression",
+                "Development Status :: 3 - Alpha",
+                "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
+    ])
