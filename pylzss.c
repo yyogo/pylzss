@@ -19,7 +19,7 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <Python.h>
+#include <py3c.h>
 #include "lzss.h"
 
 #ifndef uint8_t
@@ -84,7 +84,7 @@ static PyMethodDef pylzss_methods[] = {
 	{ NULL, NULL, 0, NULL }
 };
 
-PyMODINIT_FUNC PyInit_lzss(void)
+MODULE_INIT_FUNC(lzss)
 {
 	PyObject *module;
 	static struct PyModuleDef moduledef = {
