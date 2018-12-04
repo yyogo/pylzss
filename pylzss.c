@@ -84,35 +84,21 @@ static PyMethodDef pylzss_methods[] = {
 	{ NULL, NULL, 0, NULL }
 };
 
-#if PY_MAJOR_VERSION >= 3
-#define INITERROR return NULL
-
-static struct PyModuleDef pylzss_moduledef = {
-        PyModuleDef_HEAD_INIT,
-        "lzss",
-        NULL,
-        -1,
-        pylzss_methods,
-        NULL,
-        NULL,
-        NULL,
-        NULL
-};
-
 PyMODINIT_FUNC PyInit_lzss(void)
-
-#else
-#define INITERROR return
-
-PyMODINIT_FUNC initlzss(void)
-#endif
 {
 	PyObject *module;
-#if PY_MAJOR_VERSION >= 3
-    module = PyModule_Create(&pylzss_moduledef);
-#else
-    module = Py_InitModule("lzss", pylzss_methods);
-#endif
+	static struct PyModuleDef moduledef = {
+		PyModuleDef_HEAD_INIT,
+		"lzss",
+		NULL,
+		-1,
+		pylzss_methods,
+		NULL,
+		NULL,
+		NULL,
+		NULL
+	};
+	module = PyModule_Create(&moduledef);
 	if (!module) return NULL;
 
 	pylzss_error = PyErr_NewException("lzss.error", NULL, NULL);
