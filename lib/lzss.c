@@ -21,25 +21,121 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+/**************************************************************
+	LZSS.C -- A Data Compression Program
+	(tab = 4 spaces)
+***************************************************************
+	4/6/1989 Haruhiko Okumura
+	Use, distribute, and modify this program freely.
+	Please send me your improved versions.
+		PC-VAN		SCIENCE
+		NIFTY-Serve	PAF01022
+		CompuServe	74050,1022
+**************************************************************/
+
 #include <lzss.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 /* If match length <= P then output one character */
 static const unsigned LZSS_P = 1;
 
-static int output1(struct lzss *lzss, struct lzss_io *io, int c);
-static int output2(struct lzss *lzss, struct lzss_io *io, int x, int y);
-static int output_word(struct lzss *lzss, struct lzss_io *io,
-		       int mask, int byte);
-static int putbit0(struct lzss *lzss, struct lzss_io *io);
-static int putbit1(struct lzss *lzss, struct lzss_io *io);
-static int flush_bit_buffer(struct lzss *lzss, struct lzss_io *io);
-static int getbit(struct lzss *lzss, int n, struct lzss_io *io);
+#define N		 4096	/* size of ring buffer */
+#define F		   18	/* upper limit for match_length */
+#define THRESHOLD	2   /* encode string into position and length
+						   if match_length is greater than this */
+#define NIL			N	/* index for root of binary search trees */
+
+unsigned long int
+		textsize = 0,	/* text size counter */
+		codesize = 0,	/* code size counter */
+		printcount = 0;	/* counter for reporting progress every 1K bytes */
+unsigned char
+		text_buf[N + F - 1];	/* ring buffer of size N,
+			with extra F-1 bytes to facilitate string comparison */
+int		match_position, match_length,  /* of longest match.  These are
+			set by the InsertNode() procedure. */
+		lson[N + 1], rson[N + 257], dad[N + 1];  /* left & right children &
+			parents -- These constitute binary search trees. */
 
 /* ----------------------------------------------------------------------------
  * public functions
  */
+ 
+void InitTree(void)  /* initialize trees */
+{
+	int  i;
+
+	/* For i = 0 to N - 1, rson[i] and lson[i] will be the right and
+	   left children of node i.  These nodes need not be initialized.
+	   Also, dad[i] is the parent of node i.  These are initialized to
+	   NIL (= N), which stands for 'not used.'
+	   For i = 0 to 255, rson[N + i + 1] is the root of the tree
+	   for strings that begin with character i.  These are initialized
+	   to NIL.  Note there are 256 trees. */
+
+	for (i = N + 1; i <= N + 256; i++) rson[i] = NIL;
+	for (i = 0; i < N; i++) dad[i] = NIL;
+}
+
+
+void InsertNode(int r)
+	/* Inserts string of length F, text_buf[r..r+F-1], into one of the
+	   trees (text_buf[r]'th tree) and returns the longest-match position
+	   and length via the global variables match_position and match_length.
+	   If match_length = F, then removes the old node in favor of the new
+	   one, because the old one will be deleted sooner.
+	   Note r plays double role, as tree node and position in buffer. */
+{
+	int  i, p, cmp;
+	unsigned char  *key;
+
+	cmp = 1;  key = &text_buf[r];  p = N + 1 + key[0];
+	rson[r] = lson[r] = NIL;  match_length = 0;
+	for ( ; ; ) {
+		if (cmp >= 0) {
+			if (rson[p] != NIL) p = rson[p];
+			else {  rson[p] = r;  dad[r] = p;  return;  }
+		} else {
+			if (lson[p] != NIL) p = lson[p];
+			else {  lson[p] = r;  dad[r] = p;  return;  }
+		}
+		for (i = 1; i < F; i++)
+			if ((cmp = key[i] - text_buf[p + i]) != 0)  break;
+		if (i > match_length) {
+			match_position = p;
+			if ((match_length = i) >= F)  break;
+		}
+	}
+	dad[r] = dad[p];  lson[r] = lson[p];  rson[r] = rson[p];
+	dad[lson[p]] = r;  dad[rson[p]] = r;
+	if (rson[dad[p]] == p) rson[dad[p]] = r;
+	else                   lson[dad[p]] = r;
+	dad[p] = NIL;  /* remove p */
+}
+
+void DeleteNode(int p)  /* deletes node p from tree */
+{
+	int  q;
+	
+	if (dad[p] == NIL) return;  /* not in tree */
+	if (rson[p] == NIL) q = lson[p];
+	else if (lson[p] == NIL) q = rson[p];
+	else {
+		q = lson[p];
+		if (rson[q] != NIL) {
+			do {  q = rson[q];  } while (rson[q] != NIL);
+			rson[dad[q]] = lson[q];  dad[lson[q]] = dad[q];
+			lson[q] = lson[p];  dad[lson[p]] = q;
+		}
+		rson[q] = rson[p];  dad[rson[p]] = q;
+	}
+	dad[q] = dad[p];
+	if (rson[dad[p]] == p) rson[dad[p]] = q;  else lson[dad[p]] = q;
+	dad[p] = NIL;
+}
+
 
 int lzss_init(struct lzss *lzss, unsigned ei, unsigned ej)
 {
@@ -75,211 +171,104 @@ void lzss_free_buffer(struct lzss *lzss)
 
 int lzss_encode(struct lzss *lzss, struct lzss_io *io)
 {
-	int i, j, f1, x, y, r, s, bufferend, c;
-
-	memset(lzss->buffer, 0, (lzss->n - lzss->f));
-	lzss->in_size = 0;
-	lzss->out_size = 0;
-
-	for (i = lzss->n - lzss->f; i < lzss->n * 2; i++) {
-		if ((c = io->rd(io->i)) == EOF)
-			break;
-
-		lzss->buffer[i] = c;
-		lzss->in_size++;
-	}
-
-	bufferend = i;
-	r = lzss->n - lzss->f;
-	s = 0;
-
-	while (r < bufferend) {
-		f1 = (lzss->f <= bufferend - r) ? lzss->f : bufferend - r;
-		x = 0;
-		y = 1;
-		c = lzss->buffer[r];
-
-		for (i = r - 1; i >= s; i--) {
-			if (lzss->buffer[i] == c) {
-				for (j = 1; j < f1; j++)
-					if (lzss->buffer[i + j] !=
-					    lzss->buffer[r + j])
-						break;
-				if (j > y) {
-					x = i;
-					y = j;
-				}
-			}
-		}
-
-		if (y <= LZSS_P) {
-			if (output1(lzss, io, c))
-				return -1;
+	int  i, c, len, r, s, last_match_length, code_buf_ptr;
+	unsigned char  code_buf[17], mask;
+	
+	InitTree();  /* initialize trees */
+	code_buf[0] = 0;  /* code_buf[1..16] saves eight units of code, and
+		code_buf[0] works as eight flags, "1" representing that the unit
+		is an unencoded letter (1 byte), "0" a position-and-length pair
+		(2 bytes).  Thus, eight units require at most 16 bytes of code. */
+	code_buf_ptr = mask = 1;
+	s = 0;  r = N - F;
+	for (i = s; i < r; i++) text_buf[i] = ' ';  /* Clear the buffer with
+		any character that will appear often. */
+        
+	for (len = 0; len < F && ((c = io->rd(io->i)) != EOF); len++)
+		text_buf[r + len] = c;  /* Read F bytes into the last F bytes of
+			the buffer */
+	if ((textsize = len) == 0) return -1;  /* text of size zero */
+	for (i = 1; i <= F; i++) InsertNode(r - i);  /* Insert the F strings,
+		each of which begins with one or more 'space' characters.  Note
+		the order in which these strings are inserted.  This way,
+		degenerate trees will be less likely to occur. */
+	InsertNode(r);  /* Finally, insert the whole string just read.  The
+		global variables match_length and match_position are set. */
+	do {
+		if (match_length > len) match_length = len;  /* match_length
+			may be spuriously long near the end of text. */
+		if (match_length <= THRESHOLD) {
+			match_length = 1;  /* Not long enough match.  Send one byte. */
+			code_buf[0] |= mask;  /* 'send one byte' flag */
+			code_buf[code_buf_ptr++] = text_buf[r];  /* Send uncoded. */
 		} else {
-			if (output2(lzss, io, x & (lzss->n - 1), y - 2))
-				return -1;
+			code_buf[code_buf_ptr++] = (unsigned char) match_position;
+			code_buf[code_buf_ptr++] = (unsigned char)
+				(((match_position >> 4) & 0xf0)
+			  | (match_length - (THRESHOLD + 1)));  /* Send position and
+					length pair. Note match_length > THRESHOLD. */
 		}
-
-		r += y;
-		s += y;
-
-		if (r >= (lzss->n * 2) - lzss->f) {
-			for (i = 0; i < lzss->n; i++)
-				lzss->buffer[i] = lzss->buffer[i + lzss->n];
-
-			bufferend -= lzss->n;
-			r -= lzss->n;
-			s -= lzss->n;
-
-			while (bufferend < lzss->n * 2) {
-				if ((c = io->rd(io->i)) == EOF)
-					break;
-
-				lzss->buffer[bufferend++] = c;
-				lzss->in_size++;
-			}
+		if ((mask <<= 1) == 0) {  /* Shift mask left one bit. */
+			for (i = 0; i < code_buf_ptr; i++)  /* Send at most 8 units of */
+				io->wr(code_buf[i], io->o);   /* code together */
+			codesize += code_buf_ptr;
+			code_buf[0] = 0;  code_buf_ptr = mask = 1;
 		}
+		last_match_length = match_length;
+		for (i = 0; i < last_match_length &&
+				((c = io->rd(io->i)) != EOF); i++) {
+			DeleteNode(s);		/* Delete old strings and */
+			text_buf[s] = c;	/* read new bytes */
+			if (s < F - 1) text_buf[s + N] = c;  /* If the position is
+				near the end of buffer, extend the buffer to make
+				string comparison easier. */
+			s = (s + 1) & (N - 1);  r = (r + 1) & (N - 1);
+				/* Since this is a ring buffer, increment the position
+				   modulo N. */
+			InsertNode(r);	/* Register the string in text_buf[r..r+F-1] */
+		}
+		
+		while (i++ < last_match_length) {	/* After the end of text, */
+			DeleteNode(s);					/* no need to read, but */
+			s = (s + 1) & (N - 1);  r = (r + 1) & (N - 1);
+			if (--len) InsertNode(r);		/* buffer may not be empty. */
+		}
+	} while (len > 0);	/* until length of string to be processed is zero */
+	if (code_buf_ptr > 1) {		/* Send remaining code. */
+		for (i = 0; i < code_buf_ptr; i++) io->wr(code_buf[i], io->o);
+		codesize += code_buf_ptr;
 	}
-
-	flush_bit_buffer(lzss, io);
-
-	return 0;
+    
+    return 0;
+	/*printf("In : %ld bytes\n", textsize);
+	printf("Out: %ld bytes\n", codesize);
+	printf("Out/In: %.3f\n", (double)codesize / textsize);*/
 }
 
 int lzss_decode(struct lzss *lzss, struct lzss_io *io)
 {
-	int i, j, k, r, c;
-
-	memset(lzss->buffer, 0, (lzss->n - lzss->f));
-	r = lzss->n - lzss->f;
-
-	while ((c = getbit(lzss, 1, io)) != EOF) {
-		if (c) {
-			if ((c = getbit(lzss, 8, io)) == EOF)
-				break;
-
-			io->wr(c, io->o);
-			lzss->buffer[r++] = c;
-			r &= (lzss->n - 1);
+	int  i, j, k, r, c;
+	unsigned int  flags;
+	
+	for (i = 0; i < N - F; i++) text_buf[i] = ' ';
+	r = N - F;  flags = 0;
+	for ( ; ; ) {
+		if (((flags >>= 1) & 256) == 0) {
+			if ((c = io->rd(io->i)) == EOF) break;
+			flags = c | 0xff00;		/* uses higher byte cleverly */
+		}							/* to count eight */
+		if (flags & 1) {
+			if ((c = io->rd(io->i)) == EOF) break;
+			io->wr(c, io->o);  text_buf[r++] = c;  r &= (N - 1);
 		} else {
-			if ((i = getbit(lzss, lzss->ei, io)) == EOF)
-				break;
-
-			if ((j = getbit(lzss, lzss->ej, io)) == EOF)
-				break;
-
-			for (k = 0; k <= j + 1; k++) {
-				c = lzss->buffer[(i + k) & (lzss->n - 1)];
-				io->wr(c, io->o);
-				lzss->buffer[r++] = c;
-				r &= (lzss->n - 1);
+			if ((i = io->rd(io->i)) == EOF) break;
+			if ((j = io->rd(io->i)) == EOF) break;
+			i |= ((j & 0xf0) << 4);  j = (j & 0x0f) + THRESHOLD;
+			for (k = 0; k <= j; k++) {
+				c = text_buf[(i + k) & (N - 1)];
+				io->wr(c, io->o);  text_buf[r++] = c;  r &= (N - 1);
 			}
 		}
 	}
-
-	return 0;
-}
-
-/* ----------------------------------------------------------------------------
- * static functions
- */
-
-static int output1(struct lzss *lzss, struct lzss_io *io, int c)
-{
-	if (putbit1(lzss, io))
-		return -1;
-
-	if (output_word(lzss, io, 0x100, c))
-		return -1;
-
-	return 0;
-}
-
-static int output2(struct lzss *lzss, struct lzss_io *io, int x, int y)
-{
-	if (putbit0(lzss, io))
-		return -1;
-
-	if (output_word(lzss, io, lzss->n, x))
-		return -1;
-
-	if (output_word(lzss, io, (1 << lzss->ej), y))
-		return -1;
-
-	return 0;
-}
-
-static int output_word(struct lzss *lzss, struct lzss_io *io,
-		       int mask, int byte)
-{
-	while (mask >>= 1) {
-		if (byte & mask) {
-			if (putbit1(lzss, io))
-				return -1;
-		} else { 
-			if (putbit0(lzss, io))
-				return -1;
-		}
-	}
-
-	return 0;
-}
-
-static int putbit0(struct lzss *lzss, struct lzss_io *io)
-{
-	if (!(lzss->bit_mask >>= 1)) {
-		if (io->wr(lzss->bit_buffer, io->o) == EOF)
-			return -1;
-
-		lzss->bit_buffer = 0;
-		lzss->bit_mask = 0x80;
-		lzss->out_size++;
-	}
-
-	return 0;
-}
-
-static int putbit1(struct lzss *lzss, struct lzss_io *io)
-{
-	lzss->bit_buffer |= lzss->bit_mask;
-
-	return putbit0(lzss, io);
-}
-
-static int flush_bit_buffer(struct lzss *lzss, struct lzss_io *io)
-{
-	if (lzss->bit_mask != 0x80) {
-		if (io->wr(lzss->bit_buffer, io->o) == EOF)
-			return -1;
-
-		lzss->out_size++;
-	}
-
-	return 0;
-}
-
-static int getbit(struct lzss *lzss, int n, struct lzss_io *io)
-{
-	int x;
-	int i;
-
-	x = 0;
-
-	for (i = 0; i < n; i++) {
-		if (!lzss->getbit_mask) {
-			if ((lzss->getbit_buffer = io->rd(io->i)) == EOF)
-				return EOF;
-
-			lzss->getbit_mask = 0x80;
-		}
-
-		x <<= 1;
-
-		if (lzss->getbit_buffer & lzss->getbit_mask)
-			x++;
-
-		lzss->getbit_mask >>= 1;
-	}
-
-	return x;
+    return 0;
 }
