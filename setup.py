@@ -31,7 +31,7 @@ setup(name="lzss",
       platforms=["Windows", "Linux"],
       ext_modules=[Extension(
             "lzss",
-            sources=["pylzss.c", "lib/lzss.c", "lib/lzss-file.c"],
+            sources=["pylzss.c"],
             include_dirs=['./include'],
             language="C")],
       long_description="""\

@@ -2,12 +2,16 @@ PyLZSS
 ======
 Python library for the LZSS compression algorithm.
 
-Derivative work of https://github.com/plasticlogic/pldata/tree/master/lzss
-
 Installation
 ------------
+Install from pypi:
+
+::
+    pip install lzss
+
+Or from source:
 
 ::
 
-       python setup.py install
+    python setup.py install
 
