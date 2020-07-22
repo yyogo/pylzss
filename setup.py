@@ -20,7 +20,7 @@
 from setuptools import setup, Extension
 
 setup(name="lzss",
-      version='0.2',
+      version='0.3',
       description="LZSS compression algorithm",
       author="Guillaume Tucker",
       author_email="guillaume.tucker@plasticlogic.com",

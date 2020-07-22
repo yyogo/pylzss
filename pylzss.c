@@ -152,7 +152,7 @@ int lzss_encode(struct lzss_io *io)
 	for (len = 0; len < F && ((c = io->rd(io->i)) != EOF); len++)
 		ctx.text_buf[r + len] = c;  /* Read F bytes into the last F bytes of
 			the buffer */
-	if ((ctx.textsize = len) == 0) return -1;  /* text of size zero */
+	if ((ctx.textsize = len) == 0) return 0;  /* text of size zero */
 	for (i = 1; i <= F; i++) lzss_insert_node(&ctx, r - i);  /* Insert the F strings,
 		each of which begins with one or more 'space' characters.  Note
 		the order in which these strings are inserted.  This way,
@@ -251,7 +251,7 @@ struct pylzss_buffer {
 
 /* -- private functions -- */
 
-static PyObject *pylzss_encode_decode(PyObject *m, PyObject *args, PyObject *kw, int encode);
+static PyObject *pylzss_process(PyObject *m, PyObject *args, PyObject *kw, int compress);
 static int pylzss_buf_rd(struct pylzss_buffer *buffer);
 static int pylzss_buf_wr(int c, struct pylzss_buffer *buffer);
 
@@ -259,22 +259,22 @@ static int pylzss_buf_wr(int c, struct pylzss_buffer *buffer);
  * module methods
  */
 
-static PyObject *pylzss_encode(PyObject *m, PyObject *args, PyObject *kw)
+static PyObject *pylzss_compress(PyObject *m, PyObject *args, PyObject *kw)
 {
-	return pylzss_encode_decode(m, args, kw, 1);
+	return pylzss_process(m, args, kw, 1);
 }
 
-static PyObject *pylzss_decode(PyObject *m, PyObject *args, PyObject *kw)
+static PyObject *pylzss_decompress(PyObject *m, PyObject *args, PyObject *kw)
 {
-	return pylzss_encode_decode(m, args, kw, 0);
+	return pylzss_process(m, args, kw, 0);
 }
 
 static PyMethodDef pylzss_methods[] = {
-	{ "encode", (PyCFunction)pylzss_encode, METH_VARARGS | METH_KEYWORDS,
-	  "encode(data)\n\n"
-	  "Encode an original string into LZSS" },
-	{ "decode", (PyCFunction)pylzss_decode, METH_VARARGS | METH_KEYWORDS,
-	  "Decode an LZSS string into the original" },
+	{ "compress", (PyCFunction)pylzss_compress, METH_VARARGS | METH_KEYWORDS,
+	  "compress(data)\n\n"
+	  "Compress data using LZSS" },
+	{ "decompress", (PyCFunction)pylzss_decompress, METH_VARARGS | METH_KEYWORDS,
+	  "Decompress LZSS compressed data" },
 	{ NULL, NULL, 0, NULL }
 };
 
@@ -305,8 +305,8 @@ MODULE_INIT_FUNC(lzss)
  * private functions
  */
 
-static PyObject *pylzss_encode_decode(PyObject *m, PyObject *args,
-				      PyObject *kw, int encode)
+static PyObject *pylzss_process(PyObject *m, PyObject *args,
+                                PyObject *kw, int compress)
 {
 	static char *kwlist[] = { "data", NULL };
 	char *data;
@@ -326,7 +326,7 @@ static PyObject *pylzss_encode_decode(PyObject *m, PyObject *args,
 	ibuf.length = data_length;
 	ibuf.cur = 0;
 
-	if (encode)
+	if (compress)
 		obuf.length = data_length / 2;
 	else
 		obuf.length = data_length * 2;
@@ -344,7 +344,7 @@ static PyObject *pylzss_encode_decode(PyObject *m, PyObject *args,
 	io.i = &ibuf;
 	io.o = &obuf;
 
-	if (encode)
+	if (compress)
 		stat = lzss_encode(&io);
 	else
 		stat = lzss_decode(&io);
