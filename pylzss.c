@@ -132,7 +132,7 @@ void lzss_delete_node(struct lzss *ctx, int p)  /* deletes node p from tree */
 	ctx->dad[p] = NIL;
 }
 
-int lzss_encode(struct lzss_io *io, unsigned char initial_buffer_byte_value)
+int lzss_encode(struct lzss_io *io, unsigned int initial_buffer_byte_values)
 {
 	int  i, c, len, r, s, last_match_length, code_buf_ptr;
 	unsigned char  code_buf[17], mask;
@@ -149,7 +149,7 @@ int lzss_encode(struct lzss_io *io, unsigned char initial_buffer_byte_value)
 	for (i = s; i < r; i++) {
 		/* Clear the buffer with
 		any character that will appear often. */
-		ctx.text_buf[i] = initial_buffer_byte_value;
+		ctx.text_buf[i] = (unsigned char*)(&initial_buffer_byte_values)[i%4];
         }
 
 	for (len = 0; len < F && ((c = io->rd(io->i)) != EOF); len++)
@@ -213,13 +213,13 @@ int lzss_encode(struct lzss_io *io, unsigned char initial_buffer_byte_value)
 	printf("Out/In: %.3f\n", (double)codesize / textsize);*/
 }
 
-int lzss_decode(struct lzss_io *io, unsigned char initial_buffer_byte_value)
+int lzss_decode(struct lzss_io *io, unsigned int initial_buffer_byte_values)
 {
 	int  i, j, k, r, c;
 	unsigned int  flags;
 	unsigned char text_buf[N + F - 1];
 	
-	for (i = 0; i < N - F; i++) text_buf[i] = initial_buffer_byte_value;
+	for (i = 0; i < N - F; i++) text_buf[i] = (unsigned char*)(&initial_buffer_byte_values)[i%4];
 	r = N - F;  flags = 0;
 	for ( ; ; ) {
 		if (((flags >>= 1) & 256) == 0) {
@@ -311,9 +311,11 @@ MODULE_INIT_FUNC(lzss)
 static PyObject *pylzss_process(PyObject *m, PyObject *args,
                                 PyObject *kw, int compress)
 {
-	static char *kwlist[] = { "data", "initial_buffer_value", NULL };
+	static char *kwlist[] = { "data", "initial_buffer_values", NULL };
 	char *data;
-	unsigned char initial_buffer_value = 0x20; /* Use the space char as a default. */
+	
+	/* Use the space char as a default. */
+	unsigned int initial_buffer_values = 0x20202020;
 	size_t data_length = 0;
 
 	struct pylzss_buffer ibuf;
@@ -322,8 +324,8 @@ static PyObject *pylzss_process(PyObject *m, PyObject *args,
 	PyObject *output;
 	int stat;
 
-	if (!PyArg_ParseTupleAndKeywords(args, kw, "s#c", kwlist,
-					 &data, &data_length, &initial_buffer_value))
+	if (!PyArg_ParseTupleAndKeywords(args, kw, "s#i", kwlist,
+					 &data, &data_length, &initial_buffer_values))
 		return NULL;
 
 	ibuf.data = (uint8_t *)data;
@@ -349,9 +351,9 @@ static PyObject *pylzss_process(PyObject *m, PyObject *args,
 	io.o = &obuf;
 
 	if (compress)
-		stat = lzss_encode(&io, initial_buffer_value);
+		stat = lzss_encode(&io, initial_buffer_values);
 	else
-		stat = lzss_decode(&io, initial_buffer_value);
+		stat = lzss_decode(&io, initial_buffer_values);
 
 	if (stat) {
 		PyErr_SetString(pylzss_error, "Failed to process buffer");
