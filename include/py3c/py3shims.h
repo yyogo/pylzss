@@ -8,6 +8,7 @@
  * See https://docs.python.org/3/c-api/memory.html#raw-memory-interface
  */
 
+#define PY_SSIZE_T_CLEAN
 #ifndef _PY3C_RAWMALLOC_H_
 #define _PY3C_RAWMALLOC_H_
 #include <Python.h>
