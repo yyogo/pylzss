@@ -12,6 +12,7 @@
  * In Python 3, *all objects* have the features corresponding to removed flags.
  */
 
+#define PY_SSIZE_T_CLEAN
 #ifndef _PY3C_TPFLAGS_H_
 #define _PY3C_TPFLAGS_H_
 #include <Python.h>

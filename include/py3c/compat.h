@@ -2,6 +2,7 @@
  * Licensed under the MIT license; see py3c.h
  */
 
+#define PY_SSIZE_T_CLEAN
 #ifndef _PY3C_COMPAT_H_
 #define _PY3C_COMPAT_H_
 #include <Python.h>
